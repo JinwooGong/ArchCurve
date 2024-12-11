@@ -1,7 +1,10 @@
 import numpy as np
+import matplotlib.pyplot as plt
 from skimage.morphology import skeletonize
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import shortest_path
+from scipy.interpolate import splprep, splev
+
 
 ### Apply gamma
 def gamma_correction(image, gamma, c=1.0):
@@ -347,3 +350,83 @@ def find_longest_path(binary_image):
         result[y, x] = 1
     
     return result
+
+def sort_points_by_distance(points):
+    """
+    점들을 거리 기반으로 정렬하여 선의 순서를 만듭니다.
+    """
+    if len(points) == 0:
+        return points
+        
+    # 시작점 (가장 왼쪽 점)
+    start_idx = np.argmin(points[:, 0])
+    ordered = [points[start_idx]]
+    remaining = list(range(len(points)))
+    remaining.remove(start_idx)
+    
+    # 가장 가까운 점을 찾아가며 정렬
+    while remaining:
+        last_point = ordered[-1]
+        distances = np.sqrt(np.sum((points[remaining] - last_point) ** 2, axis=1))
+        nearest_idx = remaining[np.argmin(distances)]
+        ordered.append(points[nearest_idx])
+        remaining.remove(nearest_idx)
+    
+    return np.array(ordered)
+
+def smooth_binary_line(curve_image, smoothness=0.3, num_points=11):
+    """
+    이진 이미지의 선을 부드럽게 만듭니다.
+    
+    Args:
+        binary_image (np.ndarray): 0과 1로 이루어진 2차원 이진 이미지
+        smoothness (float): 부드러움 정도 (0에 가까울수록 원본과 유사)
+        num_points (int): 부드러운 곡선의 점 개수
+    
+    Returns:
+        tuple: (부드러운 x좌표 배열, 부드러운 y좌표 배열)
+    """
+    y_coords, x_coords = np.where(curve_image == 1)
+    # 좌표점들을 순서대로 정렬
+    points = np.column_stack((x_coords, y_coords))
+    # 점들을 연결 순서대로 정렬
+    points = sort_points_by_distance(points)
+    
+    if len(points) < 4:
+        return points[:, 0], points[:, 1]
+    
+    try:
+        # 스플라인 보간
+        tck, u = splprep([points[:, 0], points[:, 1]], s=smoothness, k=3)
+        u_new = np.linspace(0, 1, num_points)
+        x_smooth, y_smooth = splev(u_new, tck)
+        
+        return x_smooth, y_smooth
+    except:
+        # 보간이 실패할 경우 원본 반환
+        return points[:, 0], points[:, 1]
+    
+def visualize_results(binary_image, x_smooth, y_smooth):
+    # 한글 폰트 설정
+    plt.rcParams['font.family'] = 'Malgun Gothic'  # 나눔고딕 폰트 사용
+    plt.rcParams['axes.unicode_minus'] = False    # 마이너스 기호 깨짐 방지
+    """
+    원본 이진 이미지와 부드러워진 선을 시각화합니다.
+    """
+    plt.figure(figsize=(10, 10))
+    
+    # 원본 이미지
+    plt.subplot(121)
+    plt.imshow(binary_image, cmap='gray')
+    plt.title('원본 이미지')
+    plt.axis('image')
+    
+    # 부드러워진 선
+    plt.subplot(122)
+    plt.imshow(binary_image, cmap='gray', alpha=0.3)
+    plt.plot(x_smooth, y_smooth, 'r-', linewidth=2)
+    plt.title('부드러워진 선')
+    plt.axis('image')
+    
+    plt.tight_layout()
+    plt.show()
